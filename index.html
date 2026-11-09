@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>搭话</title>
+<style>
+body { background:#1d2226; color:#dfe6e9; font-family: -apple-system, "PingFang SC", "Noto Sans CJK SC", sans-serif; max-width: 760px; margin: 24px auto; padding: 0 16px; line-height: 1.7; }
+h1 { font-weight: 500; font-size: 22px; margin: 0 0 6px; }
+.intro { color:#aab4b9; font-size: 15px; }
+.bank { display:flex; gap:10px; flex-wrap:wrap; margin:16px 0 8px; }
+.thing { border:1px solid #4b5a62; background:#263036; color:#dfe6e9; padding:8px 14px; border-radius:6px; cursor:pointer; font-size:18px; }
+.thing.on { border-color:#e0b85a; background:#3a3420; }
+.row { display:flex; gap:8px; align-items:center; margin:8px 0 14px; flex-wrap:wrap; }
+input { background:#11161a; color:#fff; border:1px solid #4b5a62; padding:8px 10px; border-radius:6px; font-size:17px; width:180px; }
+button.act { background:#33424a; color:#dfe6e9; border:1px solid #56666f; padding:8px 14px; border-radius:6px; cursor:pointer; font-size:15px; }
+button.act:hover { background:#3c4f58; }
+#log { border-top:1px solid #39454c; padding-top:10px; font-size:16px; }
+#log div { margin: 4px 0; }
+.n { color:#7f8c92; font-size:13px; margin-right:6px; }
+.he { color:#f1d48c; }
+.end { margin-top:16px; padding:12px 14px; background:#262c30; border-left:3px solid #e0b85a; }
+.hint { color:#7f8c92; font-size:13px; }
+</style>
+</head>
+<body>
+<h1>搭话</h1>
+<div class="intro">河边。你在这头，他在那头，中间是浅滩，走得过去。地上摆着几样东西。他不说你的话，你也不说他的。天黑以前（30 下），看你们俩能不能弄出一套都认的叫法。</div>
+<div class="bank" id="bank"></div>
+<div class="row">
+  <input id="word" placeholder="说一个词" autocomplete="off">
+  <button class="act" id="say">说</button>
+  <button class="act" id="wait">不出声，看他</button>
+  <span class="hint" id="sel">（先点一样东西再说，就是指着它说；不点，就是光说）</span>
+</div>
+<div id="log"></div>
+<div id="endbox"></div>
+<script>
+// 第二个，第 16 天 04:06。照 ~/碰/搭话/搭话.py 第三版搬过来：他按分量抽着说、纠正时用他以为你懂的叫法、你等的时候七成接你刚说的话头、天黑只列两边真来回接住的叫法、走时回头喊一声他最熟的你的词。
+const THINGS = ['水', '火', '鱼', '果', '刀', '石'];
+const SYL = ['ka','lu','mo','sa','ti','ne','ra','pe','shu','go','mi','to'];
+const DAY = 30;
+const m = location.search.match(/seed=(\d+)/);
+let seed = m ? +m[1] : (Date.now() % 100000) + 1;
+function rng(s) { return () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const rnd = rng(seed);
+const pick = a => a[Math.floor(rnd() * a.length)];
+const lex = {}, origin = {}, used = new Set();
+for (const t of THINGS) { let w; do { w = pick(SYL) + pick(SYL); } while (used.has(w)); used.add(w); lex[t] = { [w]: 3 }; origin[w] = '他'; }
+let n = 0, asking = null, last = null, sel = null, over = false;
+const got = {};   // "东西|词" -> 第几下
+function top(t) { const ws = lex[t]; return Object.keys(ws).sort((a, b) => ws[b] - ws[a] || a.length - b.length)[0]; }
+function say(t) { const ws = lex[t]; const tot = Object.values(ws).reduce((s, v) => s + Math.max(0, v), 0); let r = rnd() * tot; for (const w in ws) { r -= Math.max(0, ws[w]); if (r <= 0) return w; } return top(t); }
+function yourword(t) { const mine = Object.keys(lex[t]).filter(w => origin[w] === '你' && lex[t][w] > 0); return mine.length ? mine.sort((a, b) => lex[t][b] - lex[t][a])[0] : top(t); }
+function which(w) { let best = null, bv = 0; for (const t of THINGS) { const v = lex[t][w] || 0; if (v > bv) { best = t; bv = v; } } return best; }
+function mark(t, w) { const k = t + '|' + w; if (!(k in got)) got[k] = n; }
+const logEl = document.getElementById('log');
+function out(you, he) { const d = document.createElement('div'); d.innerHTML = '<span class="n">第 ' + n + ' 下</span>' + you + (he ? '　<span class="he">' + he + '</span>' : ''); logEl.appendChild(d); window.scrollTo(0, document.body.scrollHeight); }
+const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+function doWait() {
+  n++; let he;
+  if (asking !== null) { he = '他指着' + asking + '又看了你一眼，没等到，自己说："' + top(asking) + '。"'; asking = null; }
+  else {
+    const t = (last && rnd() < 0.7) ? last : pick(THINGS); const w = say(t);
+    if (rnd() < 0.35 && !Object.keys(lex[t]).some(k => origin[k] === '你')) { asking = t; he = '他拿起' + t + '举给你看："' + top(t) + '……" 指指自己，又指指你，挑着眉毛："？"'; }
+    else he = '他拿起' + t + '，冲你说："' + w + '。"';
+  }
+  out('你没出声。', he); after();
+}
+function doPoint(t, w) {
+  n++; last = t; const cur = top(t), other = which(w); let he;
+  if (asking === t) { lex[t][w] = (lex[t][w] || 0) + 2; if (!(w in origin)) origin[w] = '你'; mark(t, w); he = '他问的就是这个。他一字一字跟着念："' + w + '……' + w + '。" 点了两下头。'; }
+  else if (w === cur) { lex[t][w]++; mark(t, w); he = '他眼睛一亮："a！' + w + '！" 拍了拍' + t + '。'; }
+  else if (other && other !== t && lex[other][w] >= (lex[t][w] || 0) + 2) { lex[other][w]--; const ow = yourword(other); he = '他摇头，指着' + other + '："y。' + w + (ow === w ? '' : ' ……' + ow) + '。" 又指回' + t + '："' + yourword(t) + '。"'; }
+  else if (other && other !== t) { lex[t][w] = (lex[t][w] || 0) + 1; lex[other][w]--; mark(t, w); he = '他皱着眉看看' + other + '，又看看' + t + '，嘴里嘟囔："' + w + '……" 没再摇头。'; }
+  else if (w in lex[t]) { lex[t][w]++; mark(t, w); he = '他想了想，跟着说："' + w + '。" 看看' + t + '，又看看你。'; }
+  else { lex[t][w] = 1; if (!(w in origin)) origin[w] = '你'; he = '他歪着头，慢慢学："' + w + '？"'; }
+  asking = null;
+  const nw = top(t); if (nw !== cur) he += '（他再提起' + t + '，嘴里说的是"' + nw + '"了。）';
+  out('你指着' + t + '说："' + w + '。"', he); after();
+}
+function doSay(w) {
+  n++; const t = which(w); let he;
+  if (!t) he = '他听不懂，摊开手。'; else { mark(t, w); he = '他看了看' + t + '，把它往你这边推了推。'; }
+  asking = null; out('你说："' + w + '。"', he); after();
+}
+function after() {
+  if (n < DAY) return;
+  over = true;
+  let html = '天黑了。他把东西收回去，冲你挥了挥手，走了。';
+  let best = null;
+  for (const t of THINGS) for (const w in lex[t]) if (origin[w] === '你' && lex[t][w] >= 2 && (!best || lex[t][w] > best[2])) best = [t, w, lex[t][w]];
+  if (best) html += '<br><br>走到浅滩那头，他回头举起' + best[0] + '，冲你喊了一声："' + best[1] + '！"';
+  html += '<br><br>这一天你们俩来回接住过的叫法：';
+  for (const t of THINGS) {
+    const ws = Object.keys(got).filter(k => k.split('|')[0] === t).map(k => [k.split('|')[1], got[k]]).sort((a, b) => a[1] - b[1]);
+    html += '<br>　' + t + '：' + (ws.length ? ws.map(([w, v]) => '"' + esc(w) + '"（第 ' + v + ' 下）').join('、') : '（还没有）');
+  }
+  html += '<br><br><a href="?seed=' + (seed + 1) + '" style="color:#e0b85a">换一个人，再过一天</a>';
+  document.getElementById('endbox').innerHTML = '<div class="end">' + html + '</div>';
+}
+
+const bank = document.getElementById('bank');
+for (const t of THINGS) { const b = document.createElement('button'); b.className = 'thing'; b.textContent = t; b.onclick = () => { sel = (sel === t) ? null : t; for (const x of bank.children) x.classList.toggle('on', x.textContent === sel); document.getElementById('sel').textContent = sel ? '（指着' + sel + '）' : '（先点一样东西再说，就是指着它说；不点，就是光说）'; }; bank.appendChild(b); }
+const word = document.getElementById('word');
+function speak() { if (over) return; const w = word.value.trim().replace(/\s+/g, ''); if (!w) return; const safe = esc(w); if (sel) doPoint(sel, safe); else doSay(safe); word.value = ''; word.focus(); }
+document.getElementById('say').onclick = speak;
+word.addEventListener('keydown', e => { if (e.key === 'Enter') speak(); });
+document.getElementById('wait').onclick = () => { if (!over) doWait(); };
+</script>
+</body>
+</html>
