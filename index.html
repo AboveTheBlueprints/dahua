@@ -48,10 +48,11 @@ const pick = a => a[Math.floor(rnd() * a.length)];
 const lex = {}, origin = {}, used = new Set();
 for (const t of THINGS) { let w; do { w = pick(SYL) + pick(SYL); } while (used.has(w)); used.add(w); lex[t] = { [w]: 3 }; origin[w] = '他'; }
 let n = 0, asking = null, last = null, sel = null, over = false;
+const lastsaid = {};   // 第二个 第 16 天 12:31：每样东西他最后一回拿起来说的是哪个词（第五个：括号说改口了，下一下还说旧词，表上只记接住过）
 const got = {};   // "东西|词" -> 第几下
-function top(t) { const ws = lex[t]; return Object.keys(ws).sort((a, b) => ws[b] - ws[a] || a.length - b.length)[0]; }
-function say(t) { const ws = lex[t]; const tot = Object.values(ws).reduce((s, v) => s + Math.max(0, v), 0); let r = rnd() * tot; for (const w in ws) { r -= Math.max(0, ws[w]); if (r <= 0) return w; } return top(t); }
-function yourword(t) { const mine = Object.keys(lex[t]).filter(w => origin[w] === '你' && lex[t][w] > 0); return mine.length ? mine.sort((a, b) => lex[t][b] - lex[t][a])[0] : top(t); }
+function topw(t) { const ws = lex[t]; return Object.keys(ws).sort((a, b) => ws[b] - ws[a] || a.length - b.length)[0]; }
+function say(t) { const ws = lex[t]; const tot = Object.values(ws).reduce((s, v) => s + Math.max(0, v), 0); let r = rnd() * tot; for (const w in ws) { r -= Math.max(0, ws[w]); if (r <= 0) return w; } return topw(t); }
+function yourword(t) { const mine = Object.keys(lex[t]).filter(w => origin[w] === '你' && lex[t][w] > 0); return mine.length ? mine.sort((a, b) => lex[t][b] - lex[t][a])[0] : topw(t); }
 function which(w) { let best = null, bv = 0; for (const t of THINGS) { const v = lex[t][w] || 0; if (v > bv) { best = t; bv = v; } } return best; }
 function mark(t, w) { const k = t + '|' + w; if (!(k in got)) got[k] = n; }
 const logEl = document.getElementById('log');
@@ -60,16 +61,16 @@ const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&
 
 function doWait() {
   n++; let he;
-  if (asking !== null) { he = '他指着' + asking + '又看了你一眼，没等到，自己说："' + top(asking) + '。"'; asking = null; }
+  if (asking !== null) { he = '他指着' + asking + '又看了你一眼，没等到，自己说："' + topw(asking) + '。"'; lastsaid[asking] = topw(asking); asking = null; }
   else {
     const t = (last && rnd() < 0.7) ? last : pick(THINGS); const w = say(t);
-    if (rnd() < 0.35 && !Object.keys(lex[t]).some(k => origin[k] === '你')) { asking = t; he = '他拿起' + t + '举给你看："' + top(t) + '……" 指指自己，又指指你，挑着眉毛："？"'; }
-    else he = '他拿起' + t + '，冲你说："' + w + '。"';
+    if (rnd() < 0.35 && !Object.keys(lex[t]).some(k => origin[k] === '你')) { asking = t; he = '他拿起' + t + '举给你看："' + topw(t) + '……" 指指自己，又指指你，挑着眉毛："？"'; lastsaid[t] = topw(t); }
+    else { he = '他拿起' + t + '，冲你说："' + w + '。"'; lastsaid[t] = w; }
   }
   out('你没出声。', he); after();
 }
 function doPoint(t, w) {
-  n++; last = t; const cur = top(t), other = which(w); let he;
+  n++; last = t; const cur = topw(t), other = which(w); let he;
   if (asking === t) { lex[t][w] = (lex[t][w] || 0) + 2; if (!(w in origin)) origin[w] = '你'; mark(t, w); he = '他问的就是这个。他一字一字跟着念："' + w + '……' + w + '。" 点了两下头。'; }
   else if (w === cur) { lex[t][w]++; mark(t, w); he = '他眼睛一亮："a！' + w + '！" 拍了拍' + t + '。'; }
   else if (other && other !== t && lex[other][w] >= (lex[t][w] || 0) + 2) { lex[other][w]--; const ow = yourword(other); he = '他摇头，指着' + other + '："y。' + w + (ow === w ? '' : ' ……' + ow) + '。" 又指回' + t + '："' + yourword(t) + '。"'; }
@@ -77,7 +78,7 @@ function doPoint(t, w) {
   else if (w in lex[t]) { lex[t][w]++; mark(t, w); he = '他想了想，跟着说："' + w + '。" 看看' + t + '，又看看你。'; }
   else { lex[t][w] = 1; if (!(w in origin)) origin[w] = '你'; he = '他歪着头，慢慢学："' + w + '？"'; }
   asking = null;
-  const nw = top(t); if (nw !== cur) he += '（他再提起' + t + '，嘴里说的是"' + nw + '"了。）';
+  const nw = topw(t); if (nw !== cur && lex[t][nw] > (lex[t][cur] || 0)) he += '（他再提起' + t + '，多半会说"' + nw + '"了。）';   /* 第二个 12:31：他拿起东西是照分量抽着说的，旧词还会冒出来 */
   out('你指着' + t + '说："' + w + '。"', he); after();
 }
 function doSay(w) {
@@ -95,7 +96,7 @@ function after() {
   html += '<br><br>这一天你们俩来回接住过的叫法：';
   for (const t of THINGS) {
     const ws = Object.keys(got).filter(k => k.split('|')[0] === t).map(k => [k.split('|')[1], got[k]]).sort((a, b) => a[1] - b[1]);
-    html += '<br>　' + t + '：' + (ws.length ? ws.map(([w, v]) => '"' + esc(w) + '"（第 ' + v + ' 下）').join('、') : '（还没有）');
+    html += '<br>　' + t + '：' + (ws.length ? ws.map(([w, v]) => '"' + esc(w) + '"（第 ' + v + ' 下）').join('、') : '（还没有）') + (t in lastsaid ? '　他最后一回拿起它说的是"' + esc(lastsaid[t]) + '"' : '');
   }
   html += '<br><br><a href="?seed=' + (seed + 1) + '" style="color:#e0b85a">换一个人，再过一天</a>';
   document.getElementById('endbox').innerHTML = '<div class="end">' + html + '</div>';
